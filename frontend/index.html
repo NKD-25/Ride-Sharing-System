@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ride Sharing - Home</title>
+    <!-- Google Font for a modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/common.css" />
     <link rel="stylesheet" href="css/home.css" />
 </head>
@@ -11,7 +15,7 @@
     <header>
         <div class="container">
             <h1 class="logo">RideShare</h1>
-            <nav>
+            <nav id="mainNav">
                 <a href="index.html">Home</a>
                 <a href="signup.html">Sign Up</a>
                 <a href="login.html">Log In</a>
@@ -35,5 +39,28 @@
         </div>
     </footer>
     <script src="js/common.js"></script>
+    <script>
+        // adjust hero when a user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            const user = getCurrentUser && getCurrentUser();
+            if (user) {
+                const h2 = document.querySelector('.hero h2');
+                const p = document.querySelector('.hero p');
+                const btns = document.querySelector('.hero .buttons');
+                if (h2) h2.textContent = 'Welcome back, ' + user.firstName + '!';
+                if (p) p.textContent = 'Ready for another ride? Check your profile or log out.';
+                if (btns) {
+                    btns.innerHTML = `
+                        <a class="btn" href="profile.html">Profile</a>
+                        <a class="btn" href="#" id="logoutBtn">Logout</a>
+                    `;
+                    document.getElementById('logoutBtn').addEventListener('click', (e) => {
+                        e.preventDefault();
+                        logout();
+                    });
+                }
+            }
+        });
+    </script>
 </body>
 </html>
