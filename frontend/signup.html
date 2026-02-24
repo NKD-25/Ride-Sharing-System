@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ride Sharing - Sign Up</title>
+    <link rel="stylesheet" href="css/common.css" />
+    <link rel="stylesheet" href="css/signup.css" />
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1 class="logo">RideShare</h1>
+            <nav>
+                <a href="index.html">Home</a>
+                <a href="signup.html">Sign Up</a>
+                <a href="login.html">Log In</a>
+                <a href="register.html">Register</a>
+            </nav>
+        </div>
+    </header>
+    <main class="container form-page">
+        <form id="signupForm" class="form" novalidate>
+            <h2>Create an Account</h2>
+            <div class="form-group">
+                <label for="firstName">First Name</label>
+                <input type="text" id="firstName" name="firstName" required />
+            </div>
+            <div class="form-group">
+                <label for="lastName">Last Name</label>
+                <input type="text" id="lastName" name="lastName" required />
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required />
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required />
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" required />
+            </div>
+            <button type="submit" class="btn">Sign Up</button>
+        </form>
+    </main>
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 RideShare</p>
+        </div>
+    </footer>
+    <script src="js/common.js"></script>
+</body>
+</html>
