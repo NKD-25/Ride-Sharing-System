@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "id": "d4411b2d-9745-403c-ad60-72169b35c25c",
+    "name": "Nishchal",
+    "email": "nishchal@gmail.com",
+    "password": "$2b$10$5Q2Wz3HxsfNIpfCIA.wT3ONwFqDKSYWRro8XWubKYK3ueTBbfJnsW",
+    "role": "driver"
+  }
+]
