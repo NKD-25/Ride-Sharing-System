@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "7f120fa8-135b-4f36-aead-6c9b7335d622",
+    "driverId": "d51a2daa-7f4f-47bc-aec3-cbed80c73d57",
+    "from": "Panipat",
+    "to": "Delhi",
+    "date": "2026-02-28",
+    "price": 300,
+    "availableSeats": 2
+  }
+]

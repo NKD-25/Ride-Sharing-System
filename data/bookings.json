@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "id": "6d5a6892-419b-4097-a893-2678fcc4b1b4",
+    "rideId": "7f120fa8-135b-4f36-aead-6c9b7335d622",
+    "riderId": "ff5baf4d-38da-4779-b06a-1b478e662823",
+    "driverId": "d51a2daa-7f4f-47bc-aec3-cbed80c73d57",
+    "status": "pending"
+  }
+]
