@@ -26,5 +26,11 @@
     "email": "nish@gmail.com",
     "password": "$2b$10$dl/ZrpHpO.hZ5zESUpeRDusLSc3kZ4BN9fipZmEcscto4x3xKVzOu",
     "role": "driver"
+  },
+  {
+    "id": "f00b5791-1f5c-41ce-b500-b1a5408490d0",
+    "name": "nishchal",
+    "email": "nishchal1292.becse24@chitkara.edu.in",
+    "password": "$2b$10$PQ9h6mEoA7qsNqXEfFwdP.hsIG7PwpGPoL4fqUd9UarC.gW6FmA.e"
   }
 ]

@@ -7,5 +7,11 @@
     "date": "2026-02-28",
     "price": 300,
     "availableSeats": 2
+  },
+  {
+    "id": "fff9da76-49e2-466a-984f-71d42c6595f5",
+    "driverId": "f00b5791-1f5c-41ce-b500-b1a5408490d0",
+    "from": "rewari",
+    "to": "chandigarh"
   }
 ]
