@@ -1,0 +1,17 @@
+[
+  {
+    "id": "7f120fa8-135b-4f36-aead-6c9b7335d622",
+    "driverId": "d51a2daa-7f4f-47bc-aec3-cbed80c73d57",
+    "from": "Panipat",
+    "to": "Delhi",
+    "date": "2026-02-28",
+    "price": 300,
+    "availableSeats": 2
+  },
+  {
+    "id": "fff9da76-49e2-466a-984f-71d42c6595f5",
+    "driverId": "f00b5791-1f5c-41ce-b500-b1a5408490d0",
+    "from": "rewari",
+    "to": "chandigarh"
+  }
+]
