@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUsers, setCurrentUser } from '../utils/storage';
+import { login } from '../utils/api';
+import { clearAuth } from '../utils/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -9,12 +10,14 @@ export default function Login() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    const users = getUsers();
-    const user = users.find(u => u.email === email.toLowerCase() && u.password === password);
-    if (!user) { alert('Invalid email or password'); return; }
-    setCurrentUser(user);
-    alert('Logged in');
-    navigate('/profile');
+    login(email.toLowerCase(), password)
+      .then(() => {
+        alert('Logged in');
+        navigate('/');
+      })
+      .catch(err => {
+        alert(err.message || 'Login failed');
+      });
   }
 
   return (

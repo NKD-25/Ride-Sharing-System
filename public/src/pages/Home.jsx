@@ -1,90 +1,119 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { getRides, getDrivers, getCurrentUser, createRide, bookRide, cancelBooking, deleteRideById, seedDemoRides, seatsLeft, logout } from '../utils/storage';
+import { getAuth, clearAuth, getRides as apiGetRides, createRide as apiCreateRide, bookRide as apiBookRide, getDriverBookings, getRiderBookings, updateBookingStatus, cancelBooking as apiCancelBooking, deleteRide as apiDeleteRide } from '../utils/api';
 
 export default function Home() {
   const [rides, setRides] = useState([]);
-  const [drivers, setDrivers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(getCurrentUser());
+  const [authState, setAuthState] = useState(getAuth());
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const [passengers, setPassengers] = useState('');
   const [selectedRide, setSelectedRide] = useState(null);
+  const [driverRequests, setDriverRequests] = useState([]);
+  const [myBookings, setMyBookings] = useState([]);
 
-  const initialForm = { rideFrom:'', rideTo:'', rideDate:'', rideTime:'', rideSeats:1, ridePrice:0, ridePickup:'', rideNotes:'', editingId:'' };
+  const initialForm = { rideFrom:'', rideTo:'', rideDate:'', rideSeats:1, ridePrice:0, editingId:'' };
   const [form, setForm] = useState(initialForm);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    seedDemoRides();
-    refresh();
+    loadRides();
+    refreshBookings();
   }, []);
 
   useEffect(() => {
-    // update auth state when location changes (login/logout)
-    setCurrentUser(getCurrentUser());
+    setAuthState(getAuth());
+    refreshBookings();
   }, [location]);
 
-  function refresh() {
-    setRides(getRides().slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
-    setDrivers(getDrivers());
-    setCurrentUser(getCurrentUser());
+  useEffect(() => {
+    refreshBookings();
+  }, [authState]);
+
+  async function loadRides() {
+    try {
+      const list = await apiGetRides();
+      setRides(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error(err);
+      setRides([]);
+    }
+  }
+
+  async function refreshBookings() {
+    const auth = getAuth();
+    if (!auth) { setDriverRequests([]); setMyBookings([]); return; }
+    if (auth.role === 'driver') {
+      try { const reqs = await getDriverBookings(); setDriverRequests(reqs || []); } catch { setDriverRequests([]); }
+    } else {
+      try { const mine = await getRiderBookings(); setMyBookings(mine || []); } catch { setMyBookings([]); }
+    }
   }
 
   const filtered = rides.filter(r => {
+    const today = new Date().toISOString().slice(0,10);
+    if (r.date && r.date < today) return false;
+    if (Number(r.availableSeats||0) <= 0) return false;
     if (search) { const s = search.toLowerCase(); if (!((r.from||'').toLowerCase().includes(s)||(r.to||'').toLowerCase().includes(s))) return false; }
     if (dateFilter && r.date !== dateFilter) return false;
     if (priceMin && Number(r.price||0) < Number(priceMin)) return false;
     if (priceMax && Number(r.price||0) > Number(priceMax)) return false;
-    if (passengers && seatsLeft(r) < Number(passengers)) return false;
+    if (passengers && Number(r.availableSeats||0) < Number(passengers)) return false;
     return true;
   });
 
   function handleCreate(e) {
     e.preventDefault();
-    if (!currentUser) { if (confirm('You must be logged in to create a ride. Go to login?')) window.location.href = '/login'; return; }
-    const isDriver = drivers.find(d => d.email === currentUser.email);
-    if (!isDriver) { if (confirm('You need to register as a driver to create rides. Register now?')) window.location.href = '/register'; return; }
-    const data = { from: form.rideFrom, to: form.rideTo, date: form.rideDate, time: form.rideTime, seats: Number(form.rideSeats), price: Number(form.ridePrice), notes: form.rideNotes, pickup: form.ridePickup };
-    if (form.editingId) {
-      // simple update
-      // updateRide is performed in storage via updateRide when editing is implemented there
-      alert('Editing rides in-place is not supported in this simplified UI.');
-    } else {
-      createRide(data);
-    }
-    setForm(initialForm);
-    refresh();
+    const auth = getAuth();
+    if (!auth) { if (confirm('You must be logged in to create a ride. Go to login?')) window.location.href = '/login'; return; }
+    if (auth.role !== 'driver') { alert('You need to register as a driver to create rides.'); return; }
+    const data = { from: form.rideFrom, to: form.rideTo, date: form.rideDate, price: Number(form.ridePrice), availableSeats: Number(form.rideSeats) };
+    apiCreateRide(data)
+      .then(() => { alert('Ride created'); setForm(initialForm); loadRides(); })
+      .catch(err => alert(err.message || 'Unable to create ride'));
   }
 
   function handleBook(id) {
-    try { bookRide(id); alert('Booked'); refresh(); } catch (err) { alert(err.message || 'Unable to book'); }
+    apiBookRide(id)
+      .then(() => { alert('Booked (status: pending)'); refreshBookings(); })
+      .catch(err => alert(err.message || 'Unable to book'));
   }
-  function handleCancel(id) { try { cancelBooking(id); alert('Cancelled'); refresh(); } catch (err) { alert(err.message || 'Unable to cancel'); } }
-  function handleDelete(id) { if (!confirm('Delete this ride?')) return; if (deleteRideById(id)) { alert('Deleted'); refresh(); } else alert('Delete failed'); }
+  async function handleAccept(bookingId) {
+    try { await updateBookingStatus(bookingId, 'accepted'); alert('Accepted'); refreshBookings(); } catch (err) { alert(err.message || 'Unable to accept'); }
+  }
+  async function handleReject(bookingId) {
+    try { await updateBookingStatus(bookingId, 'rejected'); alert('Rejected'); refreshBookings(); } catch (err) { alert(err.message || 'Unable to reject'); }
+  }
+  async function handleCancelBooking(bookingId) {
+    try { await apiCancelBooking(bookingId); alert('Cancelled'); await refreshBookings(); await loadRides(); } catch (err) { alert(err.message || 'Unable to cancel'); }
+  }
+  async function handleCancelRide(rideId) {
+    const ok = confirm('Cancel this ride? This will cancel related bookings.');
+    if (!ok) return;
+    try { await apiDeleteRide(rideId); alert('Ride cancelled'); await loadRides(); await refreshBookings(); } catch (err) { alert(err.message || 'Unable to cancel ride'); }
+  }
 
   return (
     <main className="container">
       <section className="hero">
-        {currentUser ? (
+        {authState ? (
           <>
-            <h2>Welcome back, {currentUser.firstName}!</h2>
-            <p>Ready for another ride? Check your profile or log out.</p>
+            <h2>Welcome!</h2>
+            <p>You are logged in as {authState.role === 'driver' ? 'Driver' : 'Client'}.</p>
             <div className="buttons">
-              <Link className="btn" to="/profile">Profile</Link>
-              <button className="btn" onClick={() => { logout(); setCurrentUser(null); navigate('/'); }}>Logout</button>
+              <button className="btn" onClick={() => { clearAuth(); setAuthState(null); navigate('/'); }}>Logout</button>
             </div>
           </>
         ) : (
           <>
             <h2>Welcome to RideShare</h2>
-            <p>Get a ride when you need it. Register as a driver or sign up as a rider!</p>
+            <p>Register as a driver or client, then log in to continue.</p>
             <div className="buttons">
-              <Link className="btn" to="/signup">Sign Up</Link>
               <Link className="btn" to="/login">Log In</Link>
+              <Link className="btn" to="/register">Register</Link>
             </div>
           </>
         )}
@@ -93,40 +122,53 @@ export default function Home() {
         <div className="ride-left">
           <div className="filters">
             <div className="search-bar"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search from or to" /></div>
-            <div className="filter-row">
-              <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} />
-              <input type="number" min="0" placeholder="Min price" value={priceMin} onChange={e=>setPriceMin(e.target.value)} />
-              <input type="number" min="0" placeholder="Max price" value={priceMax} onChange={e=>setPriceMax(e.target.value)} />
-              <input type="number" min="1" placeholder="Passengers" value={passengers} onChange={e=>setPassengers(e.target.value)} />
-            </div>
+            {authState && authState.role === 'driver' && (
+              <div className="filter-row">
+                <input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} />
+                <input type="number" min="0" placeholder="Min price" value={priceMin} onChange={e=>setPriceMin(e.target.value)} />
+                <input type="number" min="0" placeholder="Max price" value={priceMax} onChange={e=>setPriceMax(e.target.value)} />
+                <input type="number" min="1" placeholder="Passengers" value={passengers} onChange={e=>setPassengers(e.target.value)} />
+              </div>
+            )}
           </div>
           <h3>Available Rides</h3>
           <div className="rides-list">
             {filtered.length === 0 && <p>No rides available.</p>}
             {filtered.map(r => {
-              const left = seatsLeft(r);
-              const drv = drivers.find(d => d.email === r.driverEmail);
-              const driverName = drv ? drv.name : r.driverEmail;
-              const current = currentUser;
-              const alreadyBooked = current && (r.bookings || []).some(b => b.email === current.email);
-              const isOwner = current && r.driverEmail === current.email;
+              const left = Number(r.availableSeats || 0);
+              const auth = getAuth();
+              const bookedMine = auth && myBookings.some(b => b.rideId === r.id);
+              const today = new Date().toISOString().slice(0,10);
+              const ridesById = Object.fromEntries(rides.map(x => [x.id, x]));
+              const hasAcceptedFuture = myBookings.some(b => {
+                const rr = ridesById[b.rideId];
+                return b.status === 'accepted' && rr && rr.date && rr.date >= today;
+              });
+              const myBooking = myBookings.find(b => b.rideId === r.id);
               return (
                 <div key={r.id} className="ride-card">
                   <div className="ride-route"><strong>{r.from}</strong> → <strong>{r.to}</strong></div>
-                  <div className="ride-meta">{r.date} @ {r.time} · {left} seats · ₹{r.price}</div>
-                  <div className="ride-driver">Driver: {driverName}</div>
+                  <div className="ride-meta">{r.date} · {left} seats · ₹{r.price}</div>
                   <div className="ride-actions">
                     <button className="btn small" onClick={() => setSelectedRide(r)}>Details</button>
-                    {isOwner ? (
-                      <>
-                        <button className="btn small" onClick={() => alert('Edit in UI not implemented')}>Edit</button>
-                        <button className="btn small" onClick={() => handleDelete(r.id)}>Delete</button>
-                      </>
-                    ) : (
-                      alreadyBooked ? <button className="btn small" onClick={()=>handleCancel(r.id)}>Cancel</button>
-                      : left <= 0 ? <span className="full-label">Full</span>
-                      : <button className="btn small" onClick={()=>handleBook(r.id)}>Book</button>
-                    )}
+                    {auth ? (
+                      auth.role === 'driver'
+                        ? (
+                          <>
+                            <span className="full-label">Driver</span>
+                            {auth.userId === r.driverId && <button className="btn small" onClick={()=>handleCancelRide(r.id)}>Cancel Ride</button>}
+                          </>
+                        )
+                        : myBooking ? (
+                            <>
+                              <span className="full-label">Status: {myBooking.status}</span>
+                              <button className="btn small" onClick={()=>handleCancelBooking(myBooking.id)}>Cancel</button>
+                            </>
+                          )
+                          : hasAcceptedFuture ? <span className="full-label">You have an accepted ride</span>
+                          : left <= 0 ? <span className="full-label">Full</span>
+                          : <button className="btn small" onClick={()=>handleBook(r.id)}>Book</button>
+                    ) : <Link className="btn small" to="/login">Log in to book</Link>}
                   </div>
                 </div>
               );
@@ -134,32 +176,49 @@ export default function Home() {
           </div>
         </div>
         <aside className="ride-right">
-          <div className="card create-ride">
-            <h3>Create a Ride</h3>
-            <form id="createRideForm" className="form" onSubmit={handleCreate}>
-              <div className="form-group"><label>From</label><input value={form.rideFrom} onChange={e=>setForm({...form, rideFrom: e.target.value})} required /></div>
-              <div className="form-group"><label>To</label><input value={form.rideTo} onChange={e=>setForm({...form, rideTo: e.target.value})} required /></div>
-              <div className="form-group"><label>Date</label><input type="date" value={form.rideDate} onChange={e=>setForm({...form, rideDate: e.target.value})} required /></div>
-              <div className="form-group"><label>Time</label><input type="time" value={form.rideTime} onChange={e=>setForm({...form, rideTime: e.target.value})} required /></div>
-              <div className="form-group"><label>Seats</label><input type="number" min="1" value={form.rideSeats} onChange={e=>setForm({...form, rideSeats: e.target.value})} required /></div>
-              <div className="form-group"><label>Price (₹)</label><input type="number" min="0" step="0.01" value={form.ridePrice} onChange={e=>setForm({...form, ridePrice: e.target.value})} /></div>
-              <div className="form-group"><label>Pickup Points</label><input value={form.ridePickup} onChange={e=>setForm({...form, ridePickup: e.target.value})} /></div>
-              <div className="form-group"><label>Notes</label><textarea value={form.rideNotes} onChange={e=>setForm({...form, rideNotes: e.target.value})} /></div>
-              <button type="submit" className="btn">Create Ride</button>
-            </form>
-          </div>
-          <div className="card my-rides">
-            <h3>My Rides / Bookings</h3>
-            <div id="myRides">
-              {/* Simple list */}
-              {rides.filter(r => (currentUser && r.driverEmail === currentUser.email)).map(r => (
-                <div key={r.id} className="ride-card small">
-                  <div className="ride-route"><strong>{r.from}</strong> → <strong>{r.to}</strong></div>
-                  <div className="ride-meta">{r.date} @ {r.time} · {seatsLeft(r)} seats left</div>
-                </div>
-              ))}
+          {authState && authState.role === 'driver' && (
+            <div className="card create-ride">
+              <h3>Create a Ride</h3>
+              <form id="createRideForm" className="form" onSubmit={handleCreate}>
+                <div className="form-group"><label>From</label><input value={form.rideFrom} onChange={e=>setForm({...form, rideFrom: e.target.value})} required /></div>
+                <div className="form-group"><label>To</label><input value={form.rideTo} onChange={e=>setForm({...form, rideTo: e.target.value})} required /></div>
+                <div className="form-group"><label>Date</label><input type="date" value={form.rideDate} onChange={e=>setForm({...form, rideDate: e.target.value})} required /></div>
+                <div className="form-group"><label>Seats</label><input type="number" min="1" value={form.rideSeats} onChange={e=>setForm({...form, rideSeats: e.target.value})} required /></div>
+                <div className="form-group"><label>Price (₹)</label><input type="number" min="0" step="0.01" value={form.ridePrice} onChange={e=>setForm({...form, ridePrice: e.target.value})} /></div>
+                <button type="submit" className="btn">Create Ride</button>
+              </form>
             </div>
-          </div>
+          )}
+          {authState && authState.role === 'driver' && (
+            <div className="card my-rides">
+              <h3>Booking Requests</h3>
+              <div id="driverRequests">
+                {driverRequests.filter(b=>b.status==='pending').length === 0 && <p>No requests yet.</p>}
+                {driverRequests.filter(b=>b.status==='pending').map(b => (
+                  <div key={b.id} className="ride-card small">
+                    <div className="ride-meta">Booking #{b.id} · Ride {b.rideId} · Status: {b.status}</div>
+                    <div className="ride-meta">Client: {b.riderName || 'Unknown'} ({b.riderEmail || 'N/A'})</div>
+                    <div className="ride-actions">
+                      <button className="btn small" onClick={() => handleAccept(b.id)}>Accept</button>
+                      <button className="btn small" onClick={() => handleReject(b.id)}>Reject</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="card my-rides">
+                <h3>Done</h3>
+                <div id="driverDone">
+                  {driverRequests.filter(b=>b.status==='accepted').length === 0 && <p>No completed bookings.</p>}
+                  {driverRequests.filter(b=>b.status==='accepted').map(b => (
+                    <div key={b.id} className="ride-card small">
+                      <div className="ride-meta">Booking #{b.id} · Ride {b.rideId} · Status: Done</div>
+                      <div className="ride-meta">Client: {b.riderName || 'Unknown'} ({b.riderEmail || 'N/A'})</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </aside>
       </section>
 
@@ -171,8 +230,8 @@ export default function Home() {
             <div className="modal-content">
               <h3>Ride Details</h3>
               <p><strong>Route:</strong> {selectedRide.from} → {selectedRide.to}</p>
-              <p><strong>Date / Time:</strong> {selectedRide.date} @ {selectedRide.time}</p>
-              <p><strong>Seats left:</strong> {seatsLeft(selectedRide)}</p>
+              <p><strong>Date:</strong> {selectedRide.date}</p>
+              <p><strong>Seats available:</strong> {Number(selectedRide.availableSeats||0)}</p>
               <p><strong>Price:</strong> ₹{selectedRide.price}</p>
             </div>
           </div>

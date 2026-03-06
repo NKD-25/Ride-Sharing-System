@@ -22,7 +22,15 @@ exports.createRide = (req, res) => {
 
 exports.getAllRides = (req, res) => {
   const rides = readFile("rides.json");
-  res.json(rides);
+  const today = new Date().toISOString().slice(0, 10);
+  const available = rides.filter(r => {
+    const seats = Number(r.availableSeats || 0);
+    const hasSeats = seats > 0;
+    const hasDate = !!r.date;
+    const notPast = !hasDate || r.date >= today;
+    return hasSeats && notPast;
+  });
+  res.json(available);
 };
 
 exports.getRideById = (req, res) => {
@@ -48,10 +56,21 @@ exports.updateRide = (req, res) => {
 
 exports.deleteRide = (req, res) => {
   let rides = readFile("rides.json");
+  let bookings = readFile("bookings.json");
+
+  const ride = rides.find(r => r.id === req.params.id);
+  if (!ride) return res.status(404).json({ message: "Ride not found" });
+  if (ride.driverId !== req.user.id) {
+    return res.status(403).json({ message: "Not authorized to delete this ride" });
+  }
 
   const filtered = rides.filter(r => r.id !== req.params.id);
 
   writeFile("rides.json", filtered);
+
+  // cascade cancel related bookings
+  bookings = bookings.map(b => (b.rideId === req.params.id ? { ...b, status: "cancelled" } : b));
+  writeFile("bookings.json", bookings);
 
   res.json({ message: "Ride deleted successfully" });
 };
