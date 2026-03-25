@@ -1,76 +1,163 @@
-const { v4: uuidv4 } = require("uuid");
-const { readFile, writeFile } = require("../utils/file.util");
+// src/controllers/ridesController.js
 
-exports.createRide = (req, res) => {
-  const rides = readFile("rides.json");
+const { v4: uuid } = require('uuid');
+const ridesDA = require('../data-access/rides');
+const bookingsDA = require('../data-access/bookings');
+const AppError = require('../utils/AppError');
+const { validateCreateRide } = require('../utils/validate');
 
-  const newRide = {
-    id: uuidv4(),
-    driverId: req.user.id,
-    from: req.body.from,
-    to: req.body.to,
-    date: req.body.date,
-    price: req.body.price,
-    availableSeats: req.body.availableSeats
-  };
+/**
+ * GET /api/rides
+ * Query params: from, to, date (YYYY-MM-DD), minSeats, page, limit
+ * Returns paginated available rides.
+ */
+async function getAvailable(req, res, next) {
+  try {
+    const { from, to, date, minSeats, page = 1, limit = 20 } = req.query;
 
-  rides.push(newRide);
-  writeFile("rides.json", rides);
+    const rides = await ridesDA.findAvailable({ from, to, date, minSeats });
 
-  res.status(201).json(newRide);
-};
+    // Sort soonest departure first
+    rides.sort((a, b) => new Date(a.departureTime) - new Date(b.departureTime));
 
-exports.getAllRides = (req, res) => {
-  const rides = readFile("rides.json");
-  const today = new Date().toISOString().slice(0, 10);
-  const available = rides.filter(r => {
-    const seats = Number(r.availableSeats || 0);
-    const hasSeats = seats > 0;
-    const hasDate = !!r.date;
-    const notPast = !hasDate || r.date >= today;
-    return hasSeats && notPast;
-  });
-  res.json(available);
-};
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const total = rides.length;
+    const start = (pageNum - 1) * limitNum;
+    const paginated = rides.slice(start, start + limitNum);
 
-exports.getRideById = (req, res) => {
-  const rides = readFile("rides.json");
-  const ride = rides.find(r => r.id === req.params.id);
-
-  if (!ride) return res.status(404).json({ message: "Ride not found" });
-
-  res.json(ride);
-};
-
-exports.updateRide = (req, res) => {
-  let rides = readFile("rides.json");
-
-  const index = rides.findIndex(r => r.id === req.params.id);
-  if (index === -1) return res.status(404).json({ message: "Ride not found" });
-
-  rides[index] = { ...rides[index], ...req.body };
-  writeFile("rides.json", rides);
-
-  res.json(rides[index]);
-};
-
-exports.deleteRide = (req, res) => {
-  let rides = readFile("rides.json");
-  let bookings = readFile("bookings.json");
-
-  const ride = rides.find(r => r.id === req.params.id);
-  if (!ride) return res.status(404).json({ message: "Ride not found" });
-  if (ride.driverId !== req.user.id) {
-    return res.status(403).json({ message: "Not authorized to delete this ride" });
+    return res.status(200).json({
+      success: true,
+      data: {
+        rides: paginated,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum),
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
   }
+}
 
-  const filtered = rides.filter(r => r.id !== req.params.id);
+/**
+ * GET /api/rides/history
+ * Returns all past rides for the logged-in driver or client.
+ * Drivers see rides they created; clients see rides they were booked on.
+ */
+async function getHistory(req, res, next) {
+  try {
+    const now = new Date();
+    const { id: userId, role } = req.user;
+    let rides = [];
 
-  writeFile("rides.json", filtered);
+    if (role === 'driver') {
+      const all = await ridesDA.findByDriverId(userId);
+      rides = all.filter((r) => new Date(r.departureTime) < now);
+    } else {
+      // client — find rides via their bookings
+      const bookings = await bookingsDA.findByRiderId(userId);
+      const rideIds = [...new Set(bookings.map((b) => b.rideId))];
+      const all = await ridesDA.findAll();
+      rides = all.filter(
+        (r) => rideIds.includes(r.id) && new Date(r.departureTime) < now
+      );
+    }
 
-  // cascade cancel related bookings
-  bookings = bookings.map(b => (b.rideId === req.params.id ? { ...b, status: "cancelled" } : b));
-  writeFile("bookings.json", bookings);
+    rides.sort((a, b) => new Date(b.departureTime) - new Date(a.departureTime));
 
-  res.json({ message: "Ride deleted successfully" });
-};
+    return res.status(200).json({ success: true, data: { rides } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/rides
+ * Body: { from, to, departureTime, totalSeats, price?, description? }
+ * Driver only.
+ */
+async function create(req, res, next) {
+  try {
+    const { from, to, departureTime, totalSeats, price, description } = req.body;
+
+    const check = validateCreateRide({ from, to, departureTime, totalSeats, price });
+    if (!check.valid) {
+      throw new AppError(check.message, 400, 'VALIDATION_ERROR');
+    }
+
+    const seats = parseInt(totalSeats, 10);
+
+    const ride = {
+      id: uuid(),
+      driverId: req.user.id,
+      driverName: req.user.name,
+      from: from.trim(),
+      to: to.trim(),
+      departureTime: new Date(departureTime).toISOString(),
+      totalSeats: seats,
+      availableSeats: seats,
+      price: price !== undefined ? parseFloat(price) : null,
+      description: description ? description.trim() : null,
+      status: 'available',
+      createdAt: new Date().toISOString(),
+    };
+
+    const created = await ridesDA.create(ride);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Ride created successfully.',
+      data: { ride: created },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/rides/:id
+ * Driver only. Cancels the ride and cascades cancellation to all bookings.
+ */
+async function cancel(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const ride = await ridesDA.findById(id);
+    if (!ride) {
+      throw new AppError('Ride not found.', 404, 'RIDE_NOT_FOUND');
+    }
+    if (ride.driverId !== req.user.id) {
+      throw new AppError('You can only cancel your own rides.', 403, 'FORBIDDEN');
+    }
+    if (ride.status === 'cancelled') {
+      throw new AppError('This ride is already cancelled.', 409, 'ALREADY_CANCELLED');
+    }
+
+    // Mark the ride as cancelled
+    const updatedRide = await ridesDA.updateById(id, {
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+    });
+
+    // Cascade: cancel all pending/accepted bookings for this ride
+    const affectedBookings = await bookingsDA.cancelByRideId(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Ride cancelled successfully.',
+      data: {
+        ride: updatedRide,
+        cancelledBookings: affectedBookings.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getAvailable, getHistory, create, cancel };
