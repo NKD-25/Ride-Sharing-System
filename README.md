@@ -28,7 +28,7 @@ To get a local copy up and running, follow these simple steps.
 
 1.  **Clone the repository:**
     ```sh
-    git clone <your-repository-url>
+    git clone https://github.com/NKD-25/Ride-Sharing-System.git
     ```
 
 2.  **Backend Setup:**
