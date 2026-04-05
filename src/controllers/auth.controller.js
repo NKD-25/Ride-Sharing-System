@@ -1,98 +1,72 @@
-// src/controllers/authController.js
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const { v4: uuidv4 } = require("uuid");
+const { get, run } = require("../db");
+const secret = process.env.JWT_SECRET || "secretkey";
 
-const { v4: uuid } = require('uuid');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const { jwt: jwtConfig, bcrypt: bcryptConfig } = require('../config');
-const usersDA = require('../data-access/users');
-const AppError = require('../utils/AppError');
-const { validateRegister, validateLogin } = require('../utils/validate');
+exports.register = async (req, res) => {
+  const { name, email, password, gender, chattiness } = req.body || {};
 
-/**
- * POST /api/auth/register
- * Body: { name, email, password, role }
- */
-async function register(req, res, next) {
   try {
-    const { name, email, password, role } = req.body;
+    const userExists = await get(`SELECT * FROM users WHERE email = ?`, [email]);
+    if (userExists) return res.status(400).json({ message: "Email already exists" });
 
-    const check = validateRegister({ name, email, password, role });
-    if (!check.valid) {
-      throw new AppError(check.message, 400, 'VALIDATION_ERROR');
-    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const id = uuidv4();
 
-    // Hash the password — never store plaintext
-    const passwordHash = await bcrypt.hash(password, bcryptConfig.saltRounds);
-
-    const user = {
-      id: uuid(),
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      passwordHash,
-      role,
-      averageRating: null,
-      ratingCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    await usersDA.create(user);
-
-    // Don't return the hash
-    const { passwordHash: _omit, ...safeUser } = user;
-
-    return res.status(201).json({
-      success: true,
-      message: 'Account created successfully.',
-      data: { user: safeUser },
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * POST /api/auth/login
- * Body: { email, password }
- */
-async function login(req, res, next) {
-  try {
-    const { email, password } = req.body;
-
-    const check = validateLogin({ email, password });
-    if (!check.valid) {
-      throw new AppError(check.message, 400, 'VALIDATION_ERROR');
-    }
-
-    const user = await usersDA.findByEmail(email);
-
-    // Use a constant-time compare to avoid timing attacks.
-    // Even if the user doesn't exist we still run bcrypt so response time
-    // doesn't leak whether the email is registered.
-    const dummyHash = '$2b$12$invalidhashfortimingnormalization000000000000000000000';
-    const passwordMatch = user
-      ? await bcrypt.compare(password, user.passwordHash)
-      : await bcrypt.compare(password, dummyHash).then(() => false);
-
-    if (!user || !passwordMatch) {
-      throw new AppError('Invalid email or password.', 401, 'INVALID_CREDENTIALS');
-    }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name },
-      jwtConfig.secret,
-      { expiresIn: jwtConfig.expiresIn }
+    await run(
+      `INSERT INTO users(id, name, email, password, gender, chattiness) VALUES (?,?,?,?,?,?)`,
+      [id, name, email, hashedPassword, gender || null, chattiness || "BlaBla"]
     );
 
-    const { passwordHash: _omit, ...safeUser } = user;
-
-    return res.status(200).json({
-      success: true,
-      message: 'Logged in successfully.',
-      data: { token, user: safeUser },
-    });
-  } catch (err) {
-    next(err);
+    res.status(201).json({ message: "User registered successfully" });
+  } catch {
+    res.status(500).json({ message: "Server error" });
   }
-}
+};
 
-module.exports = { register, login };
+exports.updateProfile = async (req, res) => {
+  const { name, gender, chattiness, carModel, carColor, carPlate } = req.body || {};
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+  try {
+    await run(
+      `UPDATE users SET name = COALESCE(?, name), gender = COALESCE(?, gender), chattiness = COALESCE(?, chattiness), carModel = COALESCE(?, carModel), carColor = COALESCE(?, carColor), carPlate = COALESCE(?, carPlate) WHERE id = ?`,
+      [name, gender, chattiness, carModel, carColor, carPlate, userId]
+    );
+    res.json({ message: "Profile updated successfully" });
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.getProfile = async (req, res) => {
+  const userId = req.params.id || req.user?.id;
+  try {
+    const user = await get(`SELECT id, name, email, role, gender, chattiness, carModel, carColor, carPlate, emailVerified, phoneVerified, govIdVerified FROM users WHERE id = ?`, [userId]);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json(user);
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.login = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await get(`SELECT * FROM users WHERE email = ?`, [email]);
+    if (!user) return res.status(400).json({ message: "User not found" });
+    const validPass = await bcrypt.compare(password, user.password);
+    if (!validPass) return res.status(400).json({ message: "Invalid password" });
+    const token = jwt.sign({ id: user.id }, secret, { expiresIn: "1h" });
+    res.json({ token });
+  } catch (e) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.logout = (req, res) => {
+  res.json({ message: "Logout successful (delete token on frontend)" });
+};

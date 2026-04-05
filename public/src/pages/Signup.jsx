@@ -1,39 +1,44 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getUsers, saveUsers } from '../utils/storage';
+import { Link, useNavigate } from 'react-router-dom';
+import { register } from '../utils/api';
 
 export default function Signup() {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [gender, setGender] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const navigate = useNavigate();
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!firstName || !lastName || !email || !password || !confirm) { alert('All fields are required.'); return; }
-    if (password !== confirm) { alert('Passwords do not match.'); return; }
-    const users = getUsers();
-    if (users.find(u => u.email === email.toLowerCase())) { alert('Email already registered. Please log in.'); return; }
-    const newUser = { firstName, lastName, email: email.toLowerCase(), password };
-    users.push(newUser);
-    saveUsers(users);
-    alert('Sign up successful! Redirecting to log in...');
-    navigate('/login');
+    if (password !== confirmPassword) { alert("Passwords do not match"); return; }
+    register({ name, email, password, gender })
+      .then(() => { alert('Registration successful! Please log in.'); navigate('/login'); })
+      .catch(err => alert(err.message || 'Registration failed'));
   }
 
   return (
-    <main className="container form-page">
-      <form className="form" onSubmit={handleSubmit}>
-        <h2>Create an Account</h2>
-        <div className="form-group"><label>First Name</label><input value={firstName} onChange={e=>setFirstName(e.target.value)} required /></div>
-        <div className="form-group"><label>Last Name</label><input value={lastName} onChange={e=>setLastName(e.target.value)} required /></div>
-        <div className="form-group"><label>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></div>
-        <div className="form-group"><label>Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required /></div>
-        <div className="form-group"><label>Confirm Password</label><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} required /></div>
-        <button className="btn">Sign Up</button>
-      </form>
-    </main>
+    <div className="auth-container">
+      <div className="auth-card">
+        <h2>Join RideShare</h2>
+        <form onSubmit={handleSubmit} className="form">
+          <div className="form-group"><label>Full Name</label><input value={name} onChange={e=>setName(e.target.value)} required /></div>
+          <div className="form-group"><label>Email Address</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></div>
+          <div className="form-group"><label>Gender</label>
+            <select value={gender} onChange={e=>setGender(e.target.value)} required>
+              <option value="">Select Gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="form-group"><label>Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required /></div>
+          <div className="form-group"><label>Confirm Password</label><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} required /></div>
+          <button type="submit" className="btn primary block">Sign Up</button>
+        </form>
+        <p className="auth-footer">Already have an account? <Link to="/login">Log In</Link></p>
+      </div>
+    </div>
   );
 }

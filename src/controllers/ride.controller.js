@@ -1,163 +1,105 @@
-// src/controllers/ridesController.js
+const { v4: uuidv4 } = require("uuid");
+const { all, get, run } = require("../db");
 
-const { v4: uuid } = require('uuid');
-const ridesDA = require('../data-access/rides');
-const bookingsDA = require('../data-access/bookings');
-const AppError = require('../utils/AppError');
-const { validateCreateRide } = require('../utils/validate');
+exports.createRide = async (req, res) => {
+  const { from, to, date, price, availableSeats, isLadiesOnly, isInstantBooking, stops, carModel, distanceKm } = req.body || {};
+  const driverId = req.user?.id;
+  if (!driverId) return res.status(401).json({ message: "Unauthorized" });
 
-/**
- * GET /api/rides
- * Query params: from, to, date (YYYY-MM-DD), minSeats, page, limit
- * Returns paginated available rides.
- */
-async function getAvailable(req, res, next) {
   try {
-    const { from, to, date, minSeats, page = 1, limit = 20 } = req.query;
+    const user = await get(`SELECT carModel FROM users WHERE id = ?`, [driverId]);
+    if (!user || !user.carModel) {
+      return res.status(400).json({ 
+        message: "Vehicle details required to publish a ride.", 
+        requireVehicle: true 
+      });
+    }
 
-    const rides = await ridesDA.findAvailable({ from, to, date, minSeats });
-
-    // Sort soonest departure first
-    rides.sort((a, b) => new Date(a.departureTime) - new Date(b.departureTime));
-
-    // Pagination
-    const pageNum = Math.max(1, parseInt(page, 10));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
-    const total = rides.length;
-    const start = (pageNum - 1) * limitNum;
-    const paginated = rides.slice(start, start + limitNum);
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        rides: paginated,
-        pagination: {
-          total,
-          page: pageNum,
-          limit: limitNum,
-          totalPages: Math.ceil(total / limitNum),
-        },
-      },
-    });
-  } catch (err) {
-    next(err);
+    const id = uuidv4();
+    await run(
+      `INSERT INTO rides(id, driverId, fromCity, toCity, date, price, availableSeats, isLadiesOnly, isInstantBooking, stops, carModel, distanceKm) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, driverId, from, to, date, price, availableSeats, isLadiesOnly ? 1 : 0, isInstantBooking ? 1 : 0, stops ? JSON.stringify(stops) : null, carModel || user.carModel, distanceKm || null]
+    );
+    res.status(201).json({ id, from, to, date, price, availableSeats });
+  } catch {
+    res.status(500).json({ message: "Server error" });
   }
-}
+};
 
-/**
- * GET /api/rides/history
- * Returns all past rides for the logged-in driver or client.
- * Drivers see rides they created; clients see rides they were booked on.
- */
-async function getHistory(req, res, next) {
+exports.getAllRides = async (req, res) => {
+  const { from, to, date, minPrice, maxPrice, isLadiesOnly } = req.query || {};
+  let sql = `SELECT r.*, u.name as driverName, u.gender as driverGender FROM rides r JOIN users u ON r.driverId = u.id WHERE r.availableSeats > 0`;
+  const params = [];
+
+  if (from) { sql += ` AND r.fromCity LIKE ?`; params.push(`%${from}%`); }
+  if (to) { sql += ` AND r.toCity LIKE ?`; params.push(`%${to}%`); }
+  if (date) { sql += ` AND r.date = ?`; params.push(date); }
+  if (minPrice) { sql += ` AND r.price >= ?`; params.push(Number(minPrice)); }
+  if (maxPrice) { sql += ` AND r.price <= ?`; params.push(Number(maxPrice)); }
+  if (isLadiesOnly === "true") { sql += ` AND r.isLadiesOnly = 1`; }
+
   try {
-    const now = new Date();
-    const { id: userId, role } = req.user;
-    let rides = [];
-
-    if (role === 'driver') {
-      const all = await ridesDA.findByDriverId(userId);
-      rides = all.filter((r) => new Date(r.departureTime) < now);
-    } else {
-      // client — find rides via their bookings
-      const bookings = await bookingsDA.findByRiderId(userId);
-      const rideIds = [...new Set(bookings.map((b) => b.rideId))];
-      const all = await ridesDA.findAll();
-      rides = all.filter(
-        (r) => rideIds.includes(r.id) && new Date(r.departureTime) < now
-      );
-    }
-
-    rides.sort((a, b) => new Date(b.departureTime) - new Date(a.departureTime));
-
-    return res.status(200).json({ success: true, data: { rides } });
-  } catch (err) {
-    next(err);
+    const rows = await all(sql, params);
+    const enriched = rows.map(r => ({
+      ...r,
+      stops: r.stops ? JSON.parse(r.stops) : [],
+      isLadiesOnly: !!r.isLadiesOnly,
+      isInstantBooking: !!r.isInstantBooking
+    }));
+    res.json(enriched);
+  } catch {
+    res.status(500).json({ message: "Server error" });
   }
-}
+};
 
-/**
- * POST /api/rides
- * Body: { from, to, departureTime, totalSeats, price?, description? }
- * Driver only.
- */
-async function create(req, res, next) {
-  try {
-    const { from, to, departureTime, totalSeats, price, description } = req.body;
+exports.suggestPrice = (req, res) => {
+  const { distanceKm } = req.query || {};
+  if (!distanceKm) return res.status(400).json({ message: "Distance required" });
+  
+  // BlaBlaCar style: fair contribution (e.g. ₹5-8 per km)
+  const ratePerKm = 6; 
+  const suggested = Math.round(Number(distanceKm) * ratePerKm);
+  res.json({ suggested, ratePerKm });
+};
 
-    const check = validateCreateRide({ from, to, departureTime, totalSeats, price });
-    if (!check.valid) {
-      throw new AppError(check.message, 400, 'VALIDATION_ERROR');
-    }
+exports.getRideById = (req, res) => {
+  get(`SELECT id,driverId,fromCity as [from],toCity as [to],date,price,availableSeats FROM rides WHERE id = ?`, [req.params.id])
+    .then(ride => {
+      if (!ride) return res.status(404).json({ message: "Ride not found" });
+      res.json(ride);
+    })
+    .catch(() => res.status(500).json({ message: "Server error" }));
+};
 
-    const seats = parseInt(totalSeats, 10);
+exports.updateRide = (req, res) => {
+  get(`SELECT * FROM rides WHERE id = ?`, [req.params.id])
+    .then(ride => {
+      if (!ride) return res.status(404).json({ message: "Ride not found" });
+      if (ride.driverId !== req.user.id) return res.status(403).json({ message: "Not authorized to update this ride" });
+      const fields = []
+      const params = []
+      if (req.body.from !== undefined) { fields.push("fromCity = ?"); params.push(req.body.from) }
+      if (req.body.to !== undefined) { fields.push("toCity = ?"); params.push(req.body.to) }
+      if (req.body.date !== undefined) { fields.push("date = ?"); params.push(req.body.date) }
+      if (req.body.price !== undefined) { fields.push("price = ?"); params.push(req.body.price) }
+      if (req.body.availableSeats !== undefined) { fields.push("availableSeats = ?"); params.push(req.body.availableSeats) }
+      if (fields.length === 0) return res.json({ id: ride.id, driverId: ride.driverId, from: ride.fromCity, to: ride.toCity, date: ride.date, price: ride.price, availableSeats: ride.availableSeats })
+      params.push(req.params.id)
+      return run(`UPDATE rides SET ${fields.join(", ")} WHERE id = ?`, params).then(() =>
+        get(`SELECT id,driverId,fromCity as [from],toCity as [to],date,price,availableSeats FROM rides WHERE id = ?`, [req.params.id])
+      ).then(updated => res.json(updated))
+    })
+    .catch(() => res.status(500).json({ message: "Server error" }));
+};
 
-    const ride = {
-      id: uuid(),
-      driverId: req.user.id,
-      driverName: req.user.name,
-      from: from.trim(),
-      to: to.trim(),
-      departureTime: new Date(departureTime).toISOString(),
-      totalSeats: seats,
-      availableSeats: seats,
-      price: price !== undefined ? parseFloat(price) : null,
-      description: description ? description.trim() : null,
-      status: 'available',
-      createdAt: new Date().toISOString(),
-    };
-
-    const created = await ridesDA.create(ride);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Ride created successfully.',
-      data: { ride: created },
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * DELETE /api/rides/:id
- * Driver only. Cancels the ride and cascades cancellation to all bookings.
- */
-async function cancel(req, res, next) {
-  try {
-    const { id } = req.params;
-
-    const ride = await ridesDA.findById(id);
-    if (!ride) {
-      throw new AppError('Ride not found.', 404, 'RIDE_NOT_FOUND');
-    }
-    if (ride.driverId !== req.user.id) {
-      throw new AppError('You can only cancel your own rides.', 403, 'FORBIDDEN');
-    }
-    if (ride.status === 'cancelled') {
-      throw new AppError('This ride is already cancelled.', 409, 'ALREADY_CANCELLED');
-    }
-
-    // Mark the ride as cancelled
-    const updatedRide = await ridesDA.updateById(id, {
-      status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-    });
-
-    // Cascade: cancel all pending/accepted bookings for this ride
-    const affectedBookings = await bookingsDA.cancelByRideId(id);
-
-    return res.status(200).json({
-      success: true,
-      message: 'Ride cancelled successfully.',
-      data: {
-        ride: updatedRide,
-        cancelledBookings: affectedBookings.length,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = { getAvailable, getHistory, create, cancel };
+exports.deleteRide = (req, res) => {
+  get(`SELECT * FROM rides WHERE id = ?`, [req.params.id])
+    .then(ride => {
+      if (!ride) return res.status(404).json({ message: "Ride not found" });
+      if (ride.driverId !== req.user.id) return res.status(403).json({ message: "Not authorized to delete this ride" });
+      return run(`DELETE FROM rides WHERE id = ?`, [req.params.id]).then(() =>
+        run(`UPDATE bookings SET status = 'cancelled' WHERE rideId = ? AND status = 'accepted'`, [req.params.id])
+      ).then(() => res.json({ message: "Ride deleted successfully" }))
+    })
+    .catch(() => res.status(500).json({ message: "Server error" }));
+};
