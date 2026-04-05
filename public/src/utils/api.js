@@ -65,17 +65,40 @@ export async function register({ name, email, password, role }) {
   return handle(res);
 }
 
-export async function getRides() {
-  const res = await fetch(`${BASE_URL}/rides`);
+export async function getRides(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE_URL}/rides?${query}`);
   return handle(res);
 }
 
-export async function createRide({ from, to, date, price, availableSeats }) {
+export async function createRide({ from, to, date, price, availableSeats, isLadiesOnly, isInstantBooking, stops, carModel, distanceKm }) {
   const res = await fetch(`${BASE_URL}/rides`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: JSON.stringify({ from, to, date, price, availableSeats })
+    body: JSON.stringify({ from, to, date, price, availableSeats, isLadiesOnly, isInstantBooking, stops, carModel, distanceKm })
   });
+  return handle(res);
+}
+
+export async function getProfile(id) {
+  const path = id ? `/auth/profile/${id}` : '/auth/me';
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { ...authHeader() }
+  });
+  return handle(res);
+}
+
+export async function updateProfile(data) {
+  const res = await fetch(`${BASE_URL}/auth/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify(data)
+  });
+  return handle(res);
+}
+
+export async function suggestPrice(distanceKm) {
+  const res = await fetch(`${BASE_URL}/rides/suggest-price?distanceKm=${distanceKm}`);
   return handle(res);
 }
 
