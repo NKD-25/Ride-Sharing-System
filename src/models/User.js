@@ -1,4 +1,4 @@
-const { mongoose } = require("../mongo")
+const { mongoose } = require("../utils/mongo");
 
 const UserSchema = new mongoose.Schema(
   {

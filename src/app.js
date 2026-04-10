@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const { init } = require("./db");
-const { connectMongo } = require("./mongo");
+const { init } = require("./utils/db");
+const { connectMongo } = require("./utils/mongo");
 
 const useMongo = !!process.env.MONGO_URI;
 const authRoutes = useMongo ? require("./routes/auth.routes.mongo") : require("./routes/auth.routes");

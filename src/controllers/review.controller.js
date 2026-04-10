@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require("uuid")
-const { all, get, run } = require("../db")
+const { all, get, run } = require("../utils/db");
 
 exports.createReview = async (req, res) => {
   const { rideId, toUserId, rating, comment } = req.body || {}

@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require("uuid");
-const { all, get, run } = require("../db");
+const { all, get, run } = require("../utils/db");
 
 exports.createRide = async (req, res) => {
   const { from, to, date, price, availableSeats, isLadiesOnly, isInstantBooking, stops, carModel, distanceKm } = req.body || {};

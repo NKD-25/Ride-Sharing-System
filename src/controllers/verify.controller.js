@@ -1,5 +1,4 @@
-const { run } = require("../db")
-const { get } = require("../db")
+const { run, get } = require("../utils/db");
 
 async function setFlag(userId, field) {
   const col = field === "email" ? "emailVerified" : field === "phone" ? "phoneVerified" : "govIdVerified"

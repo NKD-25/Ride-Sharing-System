@@ -1,7 +1,7 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
-const { get, run } = require("../db");
+const { get, run } = require("../utils/db");
 const secret = process.env.JWT_SECRET || "secretkey";
 
 exports.register = async (req, res) => {

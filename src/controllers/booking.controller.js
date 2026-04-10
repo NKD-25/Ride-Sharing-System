@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require("uuid");
-const { all, get, run, tx } = require("../db");
+const { all, get, run, tx } = require("../utils/db");
 
 exports.bookRide = async (req, res) => {
   const { rideId } = req.body || {};

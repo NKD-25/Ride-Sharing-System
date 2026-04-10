@@ -1,7 +1,7 @@
 const path = require("path")
 const fs = require("fs")
 const sqlite3 = require("sqlite3").verbose()
-const { readFile } = require("./utils/file.util")
+const { readFile } = require("./file.util")
 
 const dbPath = path.join(__dirname, "..", "data", "app.db")
 fs.mkdirSync(path.join(__dirname, "..", "data"), { recursive: true })
